@@ -288,11 +288,18 @@ class BasicSynchronousClient(object):
         self.camera.calibration = calibration
 
     def setup_pov_camera(self):
-        camera_init_trans = carla.Transform(carla.Location(z=1.5))
+        camera_init_trans = carla.Transform(carla.Location(z=1.6, x=0.5))
         camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
         self.pov_camera = self.world.spawn_actor(camera_bp, camera_init_trans, attach_to=self.car)
 
-        self.pov_camera.listen(lambda image: image.save_to_disk(f'out/img/{image.frame}.png'))
+        self.pov_camera.listen(lambda image: image.save_to_disk(f'out/img/{image.frame}.png') if image.frame % 30 == 0 else 0)
+
+    def setup_depth_camera(self):
+        camera_init_trans_depth = carla.Transform(carla.Location(z=1.6, x=0.5))
+        camera_bp = self.world.get_blueprint_library().find('sensor.camera.depth')
+        self.depth_camera = self.world.spawn_actor(camera_bp, camera_init_trans_depth, attach_to=self.car)
+
+        self.depth_camera.listen(lambda image: image.save_to_disk(f'out/depth/{image.frame}.png', carla.ColorConverter.LogarithmicDepth) if image.frame % 30 == 0 else 0)
 
     def control(self, car):
         """
@@ -364,7 +371,7 @@ class BasicSynchronousClient(object):
             self.setup_car()
             self.setup_camera()
             self.setup_pov_camera()
-
+            self.setup_depth_camera()
 
             self.display = pygame.display.set_mode((VIEW_WIDTH, VIEW_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF)
             pygame_clock = pygame.time.Clock()
@@ -401,6 +408,7 @@ class BasicSynchronousClient(object):
             self.set_synchronous_mode(False)
             self.camera.destroy()
             self.pov_camera.destroy()
+            self.depth_camera.destroy()
             self.car.destroy()
             pygame.quit()
 
