@@ -44,6 +44,7 @@ import carla
 
 import weakref
 import random
+import csv
 
 try:
     import pygame
@@ -81,43 +82,52 @@ class ClientSideBoundingBoxes(object):
     """
 
     @staticmethod
-    def get_bounding_boxes(vehicles, camera):
+    def get_bounding_boxes(vehicles, camera, ignore_id=None):
         """
         Creates 3D bounding boxes based on carla vehicle list and camera.
         """
 
-        bounding_boxes = [ClientSideBoundingBoxes.get_bounding_box(vehicle, camera) for vehicle in vehicles]
-        # filter objects behind camera
+        bounding_boxes = []
+        for vehicle in vehicles:
+            if vehicle.id != ignore_id:  # Skip the controlled car
+                bb = ClientSideBoundingBoxes.get_bounding_box(vehicle, camera)
+                bounding_boxes.append(bb)
+
+        # Filter out objects behind the camera
         bounding_boxes = [bb for bb in bounding_boxes if all(bb[:, 2] > 0)]
         return bounding_boxes
 
     @staticmethod
-    def draw_bounding_boxes(display, bounding_boxes):
+    def draw_bounding_boxes(display, bounding_boxes, frame_number):
         """
         Draws bounding boxes on pygame display.
         """
 
         bb_surface = pygame.Surface((VIEW_WIDTH, VIEW_HEIGHT))
         bb_surface.set_colorkey((0, 0, 0))
-        for bbox in bounding_boxes:
-            points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
-            # draw lines
-            # base
-            pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
-            pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
-            pygame.draw.line(bb_surface, BB_COLOR, points[1], points[2])
-            pygame.draw.line(bb_surface, BB_COLOR, points[2], points[3])
-            pygame.draw.line(bb_surface, BB_COLOR, points[3], points[0])
-            # top
-            pygame.draw.line(bb_surface, BB_COLOR, points[4], points[5])
-            pygame.draw.line(bb_surface, BB_COLOR, points[5], points[6])
-            pygame.draw.line(bb_surface, BB_COLOR, points[6], points[7])
-            pygame.draw.line(bb_surface, BB_COLOR, points[7], points[4])
-            # base-top
-            pygame.draw.line(bb_surface, BB_COLOR, points[0], points[4])
-            pygame.draw.line(bb_surface, BB_COLOR, points[1], points[5])
-            pygame.draw.line(bb_surface, BB_COLOR, points[2], points[6])
-            pygame.draw.line(bb_surface, BB_COLOR, points[3], points[7])
+        with open('bounding_box_data.csv', 'a', newline='') as file:
+            writer = csv.writer(file)
+            for bbox in bounding_boxes:
+                points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
+                # Log the bounding box points along with the frame number
+                writer.writerow([frame_number] + [point for point_tuple in points for point in point_tuple])
+                # draw lines
+                # base
+                pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
+                pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
+                pygame.draw.line(bb_surface, BB_COLOR, points[1], points[2])
+                pygame.draw.line(bb_surface, BB_COLOR, points[2], points[3])
+                pygame.draw.line(bb_surface, BB_COLOR, points[3], points[0])
+                # top
+                pygame.draw.line(bb_surface, BB_COLOR, points[4], points[5])
+                pygame.draw.line(bb_surface, BB_COLOR, points[5], points[6])
+                pygame.draw.line(bb_surface, BB_COLOR, points[6], points[7])
+                pygame.draw.line(bb_surface, BB_COLOR, points[7], points[4])
+                # base-top
+                pygame.draw.line(bb_surface, BB_COLOR, points[0], points[4])
+                pygame.draw.line(bb_surface, BB_COLOR, points[1], points[5])
+                pygame.draw.line(bb_surface, BB_COLOR, points[2], points[6])
+                pygame.draw.line(bb_surface, BB_COLOR, points[3], points[7])
         display.blit(bb_surface, (0, 0))
 
     @staticmethod
@@ -234,6 +244,12 @@ class BasicSynchronousClient(object):
         self.display = None
         self.image = None
         self.capture = True
+        with open('bounding_box_data.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            # Write headers: frame and points (x1, y1, x2, y2, ..., x8, y8)
+            headers = ['frame']
+            headers += ['x{}'.format(i) for i in range(1, 9)] + ['y{}'.format(i) for i in range(1, 9)]
+            writer.writerow(headers)
 
     def camera_blueprint(self):
         """
@@ -379,6 +395,7 @@ class BasicSynchronousClient(object):
             self.set_synchronous_mode(True)
             vehicles = self.world.get_actors().filter('vehicle.*')
 
+            frame_number = 0
             while True:
                 self.world.tick()
 
@@ -386,8 +403,10 @@ class BasicSynchronousClient(object):
                 pygame_clock.tick_busy_loop(20)
 
                 self.render(self.display)
-                bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(vehicles, self.camera)
-                ClientSideBoundingBoxes.draw_bounding_boxes(self.display, bounding_boxes)
+                vehicles = self.world.get_actors().filter('vehicle.*')
+                # Pass the ID of the controlled car to be ignored
+                bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(vehicles, self.camera, ignore_id=self.car.id)
+                ClientSideBoundingBoxes.draw_bounding_boxes(self.display, bounding_boxes, frame_number)
 
                 pygame.display.flip()
 
@@ -395,14 +414,11 @@ class BasicSynchronousClient(object):
                 control.manual_gear_shift = False
                 self.car.apply_control(control)
 
-                if self.agent.done():
-                    spawn_points = self.world.get_map().get_spawn_points()
-                    self.agent.set_destination(random.choice(spawn_points).location)
-                    print("The target has been reached, searching for another target")
-
                 pygame.event.pump()
-                # if self.control(self.car):
-                #     return
+
+                frame_number += 1
+                    # if self.control(self.car):
+                    #     return
 
         finally:
             self.set_synchronous_mode(False)
