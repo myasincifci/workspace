@@ -308,14 +308,14 @@ class BasicSynchronousClient(object):
         camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
         self.pov_camera = self.world.spawn_actor(camera_bp, camera_init_trans, attach_to=self.car)
 
-        self.pov_camera.listen(lambda image: image.save_to_disk(f'out/img/{image.frame}.png') if image.frame % 30 == 0 else 0)
+        self.pov_camera.listen(lambda image: image.save_to_disk(f'out/img/{image.frame/30}.png') if image.frame % 30 == 0 else 0)
 
     def setup_depth_camera(self):
         camera_init_trans_depth = carla.Transform(carla.Location(z=1.6, x=0.5))
         camera_bp = self.world.get_blueprint_library().find('sensor.camera.depth')
         self.depth_camera = self.world.spawn_actor(camera_bp, camera_init_trans_depth, attach_to=self.car)
 
-        self.depth_camera.listen(lambda image: image.save_to_disk(f'out/depth/{image.frame}.png', carla.ColorConverter.LogarithmicDepth) if image.frame % 30 == 0 else 0)
+        self.depth_camera.listen(lambda image: image.save_to_disk(f'out/depth/{image.frame/30}.png', carla.ColorConverter.LogarithmicDepth) if image.frame % 30 == 0 else 0)
 
     def control(self, car):
         """
