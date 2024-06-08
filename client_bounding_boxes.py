@@ -26,6 +26,7 @@ Controls:
 import glob
 import os
 import sys
+import math
 
 try:
     sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
@@ -98,37 +99,34 @@ class ClientSideBoundingBoxes(object):
         return bounding_boxes
 
     @staticmethod
-    def draw_bounding_boxes(display, bounding_boxes, frame_number):
+    def draw_bounding_boxes(display, bounding_boxes, car_position, frame_number, car_speed):
         """
-        Draws bounding boxes on pygame display.
+        Draws bounding boxes on pygame display. Writes to CSV only if the car is moving.
         """
-
         bb_surface = pygame.Surface((VIEW_WIDTH, VIEW_HEIGHT))
         bb_surface.set_colorkey((0, 0, 0))
-        with open('bounding_box_data.csv', 'a', newline='') as file:
-            writer = csv.writer(file)
-            for bbox in bounding_boxes:
-                points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
-                # Log the bounding box points along with the frame number
-                writer.writerow([frame_number] + [point for point_tuple in points for point in point_tuple])
-                # draw lines
-                # base
-                pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
-                pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
-                pygame.draw.line(bb_surface, BB_COLOR, points[1], points[2])
-                pygame.draw.line(bb_surface, BB_COLOR, points[2], points[3])
-                pygame.draw.line(bb_surface, BB_COLOR, points[3], points[0])
-                # top
-                pygame.draw.line(bb_surface, BB_COLOR, points[4], points[5])
-                pygame.draw.line(bb_surface, BB_COLOR, points[5], points[6])
-                pygame.draw.line(bb_surface, BB_COLOR, points[6], points[7])
-                pygame.draw.line(bb_surface, BB_COLOR, points[7], points[4])
-                # base-top
-                pygame.draw.line(bb_surface, BB_COLOR, points[0], points[4])
-                pygame.draw.line(bb_surface, BB_COLOR, points[1], points[5])
-                pygame.draw.line(bb_surface, BB_COLOR, points[2], points[6])
-                pygame.draw.line(bb_surface, BB_COLOR, points[3], points[7])
+        for bbox in bounding_boxes:
+            points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
+            
+            # Draw all bounding boxes on the pygame display
+            pygame.draw.lines(bb_surface, BB_COLOR, True, points[0:4])
+            pygame.draw.lines(bb_surface, BB_COLOR, True, points[4:8])
+            pygame.draw.lines(bb_surface, BB_COLOR, False, [points[i] for i in [0, 4]])
+            pygame.draw.lines(bb_surface, BB_COLOR, False, [points[i] for i in [1, 5]])
+            pygame.draw.lines(bb_surface, BB_COLOR, False, [points[i] for i in [2, 6]])
+            pygame.draw.lines(bb_surface, BB_COLOR, False, [points[i] for i in [3, 7]])
+
+        if car_speed > 0.1:
+            with open('bounding_box_data.csv', 'a', newline='') as file:
+                writer = csv.writer(file)
+                for bbox in bounding_boxes:
+                    points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
+                    tolerance = 2
+                    if (abs(int(bbox[0, 0]) - int(car_position.x)) > tolerance or abs(int(bbox[0, 1]) - int(car_position.y)) > tolerance):
+                        writer.writerow([frame_number] + [point for point_tuple in points for point in point_tuple])
+
         display.blit(bb_surface, (0, 0))
+    
 
     @staticmethod
     def get_bounding_box(vehicle, camera):
@@ -404,9 +402,11 @@ class BasicSynchronousClient(object):
 
                 self.render(self.display)
                 vehicles = self.world.get_actors().filter('vehicle.*')
-                # Pass the ID of the controlled car to be ignored
-                bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(vehicles, self.camera, ignore_id=self.car.id)
-                ClientSideBoundingBoxes.draw_bounding_boxes(self.display, bounding_boxes, frame_number)
+                car_position = self.car.get_transform().location
+                bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(vehicles, self.camera)
+                car_velocity = self.car.get_velocity()
+                car_speed = math.sqrt(car_velocity.x**2 + car_velocity.y**2 + car_velocity.z**2)
+                ClientSideBoundingBoxes.draw_bounding_boxes(self.display, bounding_boxes, car_position, frame_number, car_speed)
 
                 pygame.display.flip()
 
@@ -415,7 +415,6 @@ class BasicSynchronousClient(object):
                 self.car.apply_control(control)
 
                 pygame.event.pump()
-
                 frame_number += 1
                     # if self.control(self.car):
                     #     return
